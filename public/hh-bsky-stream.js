@@ -19,7 +19,7 @@
 
       if (!qs) { el.textContent = "Missing data-queries"; continue; }
 
-      const base = (new URL(document.currentScript.src)).origin; // YOURDOMAIN
+      const base = (new URL(document.currentScript.src)).origin; // YOURDOMAIN on Vercel
       const api = `${base}/api/bsky/stream?queries=${encodeURIComponent(qs)}&days=${encodeURIComponent(days)}&reporters=${encodeURIComponent(reps)}`;
 
       // UI shell
