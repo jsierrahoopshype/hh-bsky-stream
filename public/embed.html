@@ -8,9 +8,26 @@
     </style>
   </head>
   <body>
-    <div class="hh-bsky-stream"
-      data-queries=""
-      data-days="7"></div>
-    <script async src="/hh-bsky-stream.js"></script>
+    <div id="stream-container"></div>
+
+    <script>
+      // Parse query string
+      const params = new URLSearchParams(window.location.search);
+      const queries = params.get("queries") || "";
+      const days = params.get("days") || "7";
+
+      // Create the div the script expects
+      const div = document.createElement("div");
+      div.className = "hh-bsky-stream";
+      div.setAttribute("data-queries", queries);
+      div.setAttribute("data-days", days);
+      document.getElementById("stream-container").appendChild(div);
+
+      // Load the frontend script
+      const s = document.createElement("script");
+      s.src = "/hh-bsky-stream.js";
+      s.async = true;
+      document.body.appendChild(s);
+    </script>
   </body>
 </html>
