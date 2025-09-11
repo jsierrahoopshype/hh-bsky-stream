@@ -1,8 +1,10 @@
+// /api/bsky/stream.js
 // Minimal Bluesky stream endpoint for Vercel /api routes
-// GET /api/bsky/stream?queries=Name|Nickname|KD&days=7
+// Example: /api/bsky/stream?queries=Luka|Doncic&days=7
+
 export const config = { runtime: "edge" };
 
-import reporters from "../../../reporters.json"; // adjust path if needed
+import { REPORTERS } from "./reporters.js";
 
 const APPVIEW = "https://public.api.bsky.app/xrpc";
 
@@ -23,11 +25,12 @@ function normalize(view) {
     v?.post?.record?.createdAt ||
     v?.post?.indexedAt;
   const text = v?.record?.text || "";
-  // Build a bsky.app URL (oEmbed supports these)
+
   const url =
     authorHandle && rkey
       ? `https://bsky.app/profile/${authorHandle}/post/${rkey}`
       : null;
+
   return { uri, url, createdAt, text, authorHandle };
 }
 
@@ -36,21 +39,22 @@ function matchText(txt, terms) {
   return terms.some((t) => s.includes(t));
 }
 
-async function searchByTermAndAuthor(term, did, limit = 25) {
-  // Primary: app.bsky.feed.searchPosts (may be rate limited sometimes)
+async function searchByTermAndAuthor(term, handle, limit = 25) {
   const sp = u("/app.bsky.feed.searchPosts", {
     q: term,
-    author: did,
+    author: handle,
     limit: String(limit),
     sort: "latest",
   });
+
   const res = await fetch(sp);
   if (res.ok) {
     const j = await res.json();
     return (j.posts || []).map(normalize);
   }
-  // Fallback: getAuthorFeed then text-filter locally
-  const gf = u("/app.bsky.feed.getAuthorFeed", { actor: did, limit: "50" });
+
+  // fallback
+  const gf = u("/app.bsky.feed.getAuthorFeed", { actor: handle, limit: "50" });
   const r2 = await fetch(gf);
   if (!r2.ok) return [];
   const j2 = await r2.json();
@@ -60,13 +64,13 @@ async function searchByTermAndAuthor(term, did, limit = 25) {
 export default async function handler(req) {
   const { searchParams } = new URL(req.url);
   const rawQueries = (searchParams.get("queries") || "").trim();
+  const reporters = (searchParams.get("reporters") || "").trim();
   const days = parseInt(searchParams.get("days") || "7", 10);
 
   if (!rawQueries) {
-    return new Response(
-      JSON.stringify({ error: "Missing ?queries=" }),
-      { status: 400 }
-    );
+    return new Response(JSON.stringify({ error: "Missing ?queries=" }), {
+      status: 400,
+    });
   }
 
   const terms = rawQueries
@@ -75,15 +79,15 @@ export default async function handler(req) {
     .filter(Boolean);
   const since = daysAgo(isNaN(days) ? 7 : days);
 
-  // Load DIDs from reporters.json (pre-resolved)
-  const dids = reporters.map((r) => ({ handle: r.handle, did: r.did }));
+  const handles = reporters
+    ? reporters.split(",").map((s) => s.trim())
+    : REPORTERS;
 
-  // Gather posts per DID × term
   let out = [];
-  for (const { did } of dids) {
+  for (const handle of handles) {
     for (const term of terms) {
       try {
-        const views = await searchByTermAndAuthor(term, did);
+        const views = await searchByTermAndAuthor(term, handle);
         for (const v of views) out.push(v);
       } catch {
         /* ignore */
@@ -91,14 +95,12 @@ export default async function handler(req) {
     }
   }
 
-  // Filter: last N days + keyword match
   out = out.filter((p) => {
     const t = p.createdAt ? new Date(p.createdAt) : null;
     const inWindow = t ? t >= since : false;
     return p.url && inWindow && matchText(p.text, terms);
   });
 
-  // Dedupe, sort latest first
   out = uniqBy(out, (p) => p.uri).sort(
     (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   );
@@ -110,7 +112,6 @@ export default async function handler(req) {
   return new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
-      // CDN cache for 5 minutes
       "cache-control": "s-maxage=300, stale-while-revalidate=300",
     },
   });
