@@ -1,21 +1,15 @@
 // Minimal Bluesky stream endpoint for Vercel /api routes
-// GET /api/bsky/stream?queries=Name|Nickname|KD&reporters=handle1,handle2&days=7
+// GET /api/bsky/stream?queries=Name|Nickname|KD&days=7
 export const config = { runtime: "edge" };
+
+import reporters from "../../../reporters.json"; // adjust path if needed
 
 const APPVIEW = "https://public.api.bsky.app/xrpc";
 
 // Helpers
 const u = (p, q) => APPVIEW + p + "?" + new URLSearchParams(q).toString();
 const uniqBy = (arr, key) => [...new Map(arr.map(o => [key(o), o])).values()];
-const daysAgo = (n) => new Date(Date.now() - n*24*60*60*1000);
-
-async function resolveHandle(handle) {
-  const url = u("/com.atproto.identity.resolveHandle", { handle });
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("resolveHandle failed for " + handle);
-  const j = await r.json();
-  return j.did; // DID for the handle
-}
+const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
 function normalize(view) {
   // Works with searchPosts (PostView) and getAuthorFeed (FeedViewPost)
@@ -23,23 +17,33 @@ function normalize(view) {
   const uri = v?.uri || "";
   const rkey = uri.split("/").pop();
   const authorHandle = v?.author?.handle || "";
-  const createdAt = v?.record?.createdAt || v?.indexedAt || v?.post?.record?.createdAt || v?.post?.indexedAt;
+  const createdAt =
+    v?.record?.createdAt ||
+    v?.indexedAt ||
+    v?.post?.record?.createdAt ||
+    v?.post?.indexedAt;
   const text = v?.record?.text || "";
   // Build a bsky.app URL (oEmbed supports these)
-  const url = (authorHandle && rkey)
-    ? `https://bsky.app/profile/${authorHandle}/post/${rkey}`
-    : null;
+  const url =
+    authorHandle && rkey
+      ? `https://bsky.app/profile/${authorHandle}/post/${rkey}`
+      : null;
   return { uri, url, createdAt, text, authorHandle };
 }
 
 function matchText(txt, terms) {
   const s = (txt || "").toLowerCase();
-  return terms.some(t => s.includes(t));
+  return terms.some((t) => s.includes(t));
 }
 
-async function searchByTermAndAuthor(term, did, limit=25) {
+async function searchByTermAndAuthor(term, did, limit = 25) {
   // Primary: app.bsky.feed.searchPosts (may be rate limited sometimes)
-  const sp = u("/app.bsky.feed.searchPosts", { q: term, author: did, limit: String(limit), sort: "latest" });
+  const sp = u("/app.bsky.feed.searchPosts", {
+    q: term,
+    author: did,
+    limit: String(limit),
+    sort: "latest",
+  });
   const res = await fetch(sp);
   if (res.ok) {
     const j = await res.json();
@@ -56,392 +60,23 @@ async function searchByTermAndAuthor(term, did, limit=25) {
 export default async function handler(req) {
   const { searchParams } = new URL(req.url);
   const rawQueries = (searchParams.get("queries") || "").trim();
-  const reporters = (searchParams.get("reporters") || "").trim();
   const days = parseInt(searchParams.get("days") || "7", 10);
 
   if (!rawQueries) {
-    return new Response(JSON.stringify({ error: "Missing ?queries=" }), { status: 400 });
+    return new Response(
+      JSON.stringify({ error: "Missing ?queries=" }),
+      { status: 400 }
+    );
   }
-  const terms = rawQueries.split("|").map(s => s.trim().toLowerCase()).filter(Boolean);
+
+  const terms = rawQueries
+    .split("|")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
   const since = daysAgo(isNaN(days) ? 7 : days);
 
-  const DEFAULT_REPORTERS = [
-  "ejelite1.bsky.social",
-  "yoleo.bsky.social",
-  "reichten.bsky.social",
-  "drew-h-stevens.bsky.social",
-  "tylerparker.bsky.social",
-  "shapalicious.bsky.social",
-  "danielle-lerner.bsky.social",
-  "zackcox.bsky.social",
-  "cbergin.bsky.social",
-  "youngnba.bsky.social",
-  "gameinjurydoc.bsky.social",
-  "kerryeggers.bsky.social",
-  "ezhoops.bsky.social",
-  "patricksandusky.bsky.social",
-  "nbaplaydb.bsky.social",
-  "granthughes.bsky.social",
-  "dillonreagan.bsky.social",
-  "gxjones.bsky.social",
-  "dallasmavs.bsky.social",
-  "sixersnba.bsky.social",
-  "trailblazers.bsky.social",
-  "bweisel.bsky.social",
-  "sunsphx.bsky.social",
-  "ecreates88.bsky.social",
-  "lakerfilmroom.bsky.social",
-  "kalidrafts.bsky.social",
-  "zenakeita.bsky.social",
-  "ethanjskolnick.bsky.social",
-  "wolstat.bsky.social",
-  "alexaphilippou.bsky.social",
-  "chrisbhaynes.bsky.social",
-  "mattgeorgesac.bsky.social",
-  "bryanfonseca.bsky.social",
-  "nbagamereport.bsky.social",
-  "sethwalder.bsky.social",
-  "stepbackstats.bsky.social",
-  "mattbolanos.bsky.social",
-  "taylorsnarr.bsky.social",
-  "hoopsanalyst.bsky.social",
-  "thinkingbasketball.bsky.social",
-  "deanolytics.bsky.social",
-  "dataandme.bsky.social",
-  "nateduncannba.bsky.social",
-  "beilby.bsky.social",
-  "jared-greenberg.bsky.social",
-  "aop-nba.bsky.social",
-  "mikedsykes.bsky.social",
-  "klaytheist.bsky.social",
-  "protectedpick.bsky.social",
-  "crumpledjumper.bsky.social",
-  "bmarksespn.bsky.social",
-  "nbcswarriors.bsky.social",
-  "johnzannis.bsky.social",
-  "toni-vidal.bsky.social",
-  "nathanfogg.bsky.social",
-  "damichaelcole.bsky.social",
-  "aaronbruski.bsky.social",
-  "krisplashed.bsky.social",
-  "ohnohedidnt24.bsky.social",
-  "zachkram.bsky.social",
-  "chelneyandrew.bsky.social",
-  "mattevanscu.bsky.social",
-  "rohankatti.gspn.info",
-  "christianclark3.bsky.social",
-  "dlocke09.bsky.social",
-  "wesgoldberg.bsky.social",
-  "drewhilldailym.bsky.social",
-  "asherrodblakely.bsky.social",
-  "celticsclns.bsky.social",
-  "gilsarena.bsky.social",
-  "kingjosiah54.bsky.social",
-  "jessbenson.bsky.social",
-  "sportsmediawatch.bsky.social",
-  "kbadenhausen.bsky.social",
-  "gwashburnglobe.bsky.social",
-  "jeremywoo.bsky.social",
-  "daltonjohnson.bsky.social",
-  "alexregla.bsky.social",
-  "bobbykrivitsky.bsky.social",
-  "grant2will.bsky.social",
-  "kml7.bsky.social",
-  "draftexpress.bsky.social",
-  "rodboone.bsky.social",
-  "chasedcsports.bsky.social",
-  "freemanjoe.bsky.social",
-  "bonniesgmwoj.bsky.social",
-  "jbeede.bsky.social",
-  "notoriousohm.bsky.social",
-  "alexgoldennba.bsky.social",
-  "positiveresidual.com",
-  "tntsportsus.bsky.social",
-  "dustindopirak.bsky.social",
-  "scottagness.bsky.social",
-  "gabriel1200.bsky.social",
-  "basketballpoetry.com",
-  "kevinoconnornba.bsky.social",
-  "ushernba.bsky.social",
-  "anpatt7.bsky.social",
-  "danielolinger.bsky.social",
-  "craigbirnbach.bsky.social",
-  "ruhlmuk.bsky.social",
-  "sportsreiter.bsky.social",
-  "sheacarlson.bsky.social",
-  "jgsiegel.bsky.social",
-  "morganragan.bsky.social",
-  "fmaddennba.bsky.social",
-  "chrisherrington.bsky.social",
-  "stevejones20.bsky.social",
-  "jeffschultzatl.bsky.social",
-  "mattbonner.bsky.social",
-  "statitudes.com",
-  "williamlou.bsky.social",
-  "danwolken.bsky.social",
-  "garyparrishcbs.bsky.social",
-  "tybatiste.bsky.social",
-  "davidaldridgedc.bsky.social",
-  "jaredweissnba.bsky.social",
-  "detnewsrodbeard.bsky.social",
-  "nbaoginsa.bsky.social",
-  "smithraptorsbeat.bsky.social",
-  "shotdrjr.bsky.social",
-  "joemussatto.bsky.social",
-  "pakaflocka.bsky.social",
-  "rickyodonn.bsky.social",
-  "joevardon.bsky.social",
-  "matthewtynan.bsky.social",
-  "christopherhine.bsky.social",
-  "jeffzillgitt.bsky.social",
-  "williamslaurenl.bsky.social",
-  "stevepopper.bsky.social",
-  "andrewschlecht.bsky.social",
-  "kellyiko.bsky.social",
-  "bbstats.bsky.social",
-  "thompsonscribe.bsky.social",
-  "anthonyvslater.bsky.social",
-  "jwquick.bsky.social",
-  "grantafseth.bsky.social",
-  "patbenson.bsky.social",
-  "joeymistretta.bsky.social",
-  "tomorsborn.bsky.social",
-  "automaticnba.bsky.social",
-  "adamzagoria.bsky.social",
-  "stathead.com",
-  "pompeyonsixers.bsky.social",
-  "samcyip.bsky.social",
-  "havlicekstoleit.bsky.social",
-  "jackmack12.bsky.social",
-  "montepoole.bsky.social",
-  "matsonj.com",
-  "celticsblog.bsky.social",
-  "jonathanfeigen.bsky.social",
-  "kevding.bsky.social",
-  "trevorlanenba.bsky.social",
-  "benalamar.bsky.social",
-  "levakabas.bsky.social",
-  "sportinfo247.bsky.social",
-  "craftednba.bsky.social",
-  "dannychau.bsky.social",
-  "inpredict.bsky.social",
-  "sbondynba.bsky.social",
-  "katywinge.bsky.social",
-  "nbastat.bsky.social",
-  "apooch.bsky.social",
-  "mcnuttmonica.bsky.social",
-  "bball-index.bsky.social",
-  "timbontemps.bsky.social",
-  "cyroasseo.bsky.social",
-  "jkylemann.bsky.social",
-  "isaaclevyrubinett.bsky.social",
-  "bigwos.bsky.social",
-  "bellraja19.bsky.social",
-  "adamaaronson.bsky.social",
-  "purehoop.bsky.social",
-  "bengolliver.bsky.social",
-  "nickvanexit.bsky.social",
-  "juliapoe.bsky.social",
-  "aaronjfentress.bsky.social",
-  "bballbreakdown.bsky.social",
-  "tommybeernba.bsky.social",
-  "bykevinclark.bsky.social",
-  "legionhoops.bsky.social",
-  "ginamizell.bsky.social",
-  "calderh.bsky.social",
-  "caitlinmaycooper.bsky.social",
-  "carmichaeldave.bsky.social",
-  "sichrismannix.bsky.social",
-  "jadande.bsky.social",
-  "treykerby.bsky.social",
-  "tasmelas.bsky.social",
-  "jeskeets.bsky.social",
-  "ramonaespn.bsky.social",
-  "espo.bsky.social",
-  "kyledrapertv.bsky.social",
-  "landonbuford.bsky.social",
-  "ericpincus.bsky.social",
-  "fredkatz.bsky.social",
-  "salmanalinba.bsky.social",
-  "pilarcasadobiesa.bsky.social",
-  "bannedmacmahon.bsky.social",
-  "theoquintard.bsky.social",
-  "prohoopswriters.bsky.social",
-  "jmcdonaldsa.bsky.social",
-  "markjonesespn.bsky.social",
-  "flybyknite.bsky.social",
-  "blazersedge.bsky.social",
-  "jaredgreenberg.bsky.social",
-  "dannymarang.bsky.social",
-  "jacobrude.bsky.social",
-  "r0bato.bsky.social",
-  "kambrothers.bsky.social",
-  "crainnba.bsky.social",
-  "worldwidewob.bsky.social",
-  "paolouggetti.bsky.social",
-  "deucemason.bsky.social",
-  "retepadam.bsky.social",
-  "mcuban.bsky.social",
-  "andrewmarchand.bsky.social",
-  "stevesmith.bsky.social",
-  "billsimmons.bsky.social",
-  "paulheadleynba.bsky.social",
-  "janiscarr2.bsky.social",
-  "talkinnba.bsky.social",
-  "lakersnation.bsky.social",
-  "johnledesma.bsky.social",
-  "alejandroggo.com",
-  "albertoderoa.bsky.social",
-  "jxlorenzi.bsky.social",
-  "omarisankofa.bsky.social",
-  "richarddeitsch.bsky.social",
-  "bennettdurando.bsky.social",
-  "andrewgreif.bsky.social",
-  "kellanolson.bsky.social",
-  "bytimreynolds.bsky.social",
-  "raulbarrigon.bsky.social",
-  "tonyreast.bsky.social",
-  "coachthorpe.bsky.social",
-  "jledwardsiii.bsky.social",
-  "jonathanmacri.bsky.social",
-  "iztokfranko.bsky.social",
-  "alexmcdaniel.co",
-  "britishbuzz.bsky.social",
-  "lucaskaplan.bsky.social",
-  "owenphillips.bsky.social",
-  "coupnba.bsky.social",
-  "sethrosenthal.bsky.social",
-  "jonnichols.bsky.social",
-  "spotrac.com",
-  "simonpollock.bsky.social",
-  "austinkent.bsky.social",
-  "talkhoops.bsky.social",
-  "nickrestifo.bsky.social",
-  "zachlowenba.bsky.social",
-  "darthamin.bsky.social",
-  "timcato.bsky.social",
-  "markdeeks.bsky.social",
-  "dannyleroux.bsky.social",
-  "andyblarsen.bsky.social",
-  "travonne.bsky.social",
-  "bullsjay.bsky.social",
-  "irawinderman.bsky.social",
-  "jamesherbert.bsky.social",
-  "teamziller.bsky.social",
-  "robmahoney.bsky.social",
-  "seeratsohi.bsky.social",
-  "kenpom.com",
-  "norlander.bsky.social",
-  "evanbarnes.bsky.social",
-  "yossigozlan.bsky.social",
-  "jasmynwimbish.bsky.social",
-  "mikefinger.bsky.social",
-  "instreetclothes.bsky.social",
-  "ryanblackburn.bsky.social",
-  "brettdawson.bsky.social",
-  "thesteinline.bsky.social",
-  "howardmegdal.bsky.social",
-  "realgmnba.bsky.social",
-  "joshrobbins.bsky.social",
-  "mirinfader.bsky.social",
-  "baxterholmes.bsky.social",
-  "tomwesterholm.bsky.social",
-  "chadfinn.bsky.social",
-  "noadalzell.bsky.social",
-  "mikeascotto.bsky.social",
-  "aaronbarzilai.bsky.social",
-  "marcjspears.bsky.social",
-  "tomerazarly.bsky.social",
-  "tomhaberstroh.bsky.social",
-  "byjayking.bsky.social",
-  "mikepradanba.bsky.social",
-  "vincegoodwill.bsky.social",
-  "samamick.bsky.social",
-  "loganmmurdock.bsky.social",
-  "jakelfischer.bsky.social",
-  "herringnba.bsky.social",
-  "louiszatzman.bsky.social",
-  "basketball-reference.com",
-  "rachel-nichols.bsky.social",
-  "samvecenie.bsky.social",
-  "johnhollinger.bsky.social",
-  "alexkennedynba.bsky.social",
-  "jonkrawczynski.bsky.social",
-  "masonginsberg.bsky.social",
-  "yaronweitzman.bsky.social",
-  "keerthikau.bsky.social",
-  "bryankalbrosky.bsky.social",
-  "keithsmithnba.bsky.social",
-  "khobiprice.bsky.social",
-  "joeviraynba.bsky.social",
-  "jameshamnba.bsky.social",
-  "hpbasketball.bsky.social",
-  "nbasarah.bsky.social",
-  "jasminelwatkins.bsky.social",
-  "justesbaraheni.bsky.social",
-  "jacobegoldstein.bsky.social",
-  "erikg503.bsky.social",
-  "mollyhannahm.bsky.social",
-  "johnkaralis.com",
-  "hoopinformatics.bsky.social",
-  "spindavies.bsky.social",
-  "willgottlieb.bsky.social",
-  "knarsu3.bsky.social",
-  "highkin.bsky.social",
-  "jacksimone.bsky.social",
-  "johngonzalez.bsky.social",
-  "nekiasnba.bsky.social",
-  "fearthebrown.bsky.social",
-  "danwoikesports.bsky.social",
-  "ctabatabaie.bsky.social",
-  "blakemurphy.bsky.social",
-  "paulhudrick.bsky.social",
-  "justinquinnn.bsky.social",
-  "michaelvpina.bsky.social",
-  "jonhamm.bsky.social",
-  "kerithburke.bsky.social",
-  "jadubin5.bsky.social",
-  "adamtaylornba.bsky.social",
-  "samdigiovanni.bsky.social",
-  "austinkrell.bsky.social",
-  "kyleneubeck.bsky.social",
-  "geraldbourguet.bsky.social",
-  "scooperhoops2.bsky.social",
-  "dannycunningham.bsky.social",
-  "anthonyirwinla.bsky.social",
-  "nbacobwebs.bsky.social",
-  "btrowland.bsky.social",
-  "msjnba.bsky.social",
-  "joelrushnba.bsky.social",
-  "ekoreen.bsky.social",
-  "mikevorkunov.bsky.social",
-  "duncansmith.bsky.social",
-  "danfavale.bsky.social",
-  "lawmurraythenu.bsky.social",
-  "cavsanada.bsky.social",
-  "derekbodner.bsky.social",
-  "jimowczarski.bsky.social",
-  "johnschuhmann.bsky.social",
-  "wtevs.bsky.social",
-  "stephnoh.bsky.social",
-  "basketballtalk.bsky.social",
-  "kpelton.bsky.social",
-  "yourmandevine.bsky.social",
-  "howardbeck.bsky.social",
-  "dimeuproxx.bsky.social",
-  "shamsbot.bsky.social",
-  "hoopshye.bsky.social",
-];
-
-  const handles = (reporters ? reporters.split(",") : DEFAULT_REPORTERS)
-    .map(s => s.trim()).filter(Boolean);
-
-  // Resolve handles → DIDs (cacheable)
-  const dids = [];
-  for (const h of handles) {
-    try { dids.push({ handle: h, did: await resolveHandle(h) }); }
-    catch { /* skip bad handle */ }
-  }
+  // Load DIDs from reporters.json (pre-resolved)
+  const dids = reporters.map((r) => ({ handle: r.handle, did: r.did }));
 
   // Gather posts per DID × term
   let out = [];
@@ -450,27 +85,33 @@ export default async function handler(req) {
       try {
         const views = await searchByTermAndAuthor(term, did);
         for (const v of views) out.push(v);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
-  // Filter: last N days + keyword match (covers fallback path)
-  out = out.filter(p => {
+  // Filter: last N days + keyword match
+  out = out.filter((p) => {
     const t = p.createdAt ? new Date(p.createdAt) : null;
-    const inWindow = t ? (t >= since) : false;
+    const inWindow = t ? t >= since : false;
     return p.url && inWindow && matchText(p.text, terms);
   });
 
   // Dedupe, sort latest first
-  out = uniqBy(out, p => p.uri).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  out = uniqBy(out, (p) => p.uri).sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
 
-  const body = JSON.stringify({ posts: out.map(p => ({ url: p.url, createdAt: p.createdAt })) });
+  const body = JSON.stringify({
+    posts: out.map((p) => ({ url: p.url, createdAt: p.createdAt })),
+  });
 
   return new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
-      // CDN cache for 5 minutes; keeps load tiny and plays nice with rate limits
-      "cache-control": "s-maxage=300, stale-while-revalidate=300"
-    }
+      // CDN cache for 5 minutes
+      "cache-control": "s-maxage=300, stale-while-revalidate=300",
+    },
   });
 }
