@@ -14,7 +14,6 @@ const uniqBy = (arr, key) => [...new Map(arr.map(o => [key(o), o])).values()];
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
 function normalize(view) {
-  // Works with searchPosts (PostView) and getAuthorFeed (FeedViewPost)
   const v = view.post ? view.post : view;
   const uri = v?.uri || "";
   const rkey = uri.split("/").pop();
@@ -62,7 +61,9 @@ async function searchByTermAndAuthor(term, handle, limit = 25) {
 }
 
 export default async function handler(req) {
-  const { searchParams } = new URL(req.url);
+  // Fix: use absolute base URL for Edge runtime
+  const { searchParams } = new URL(req.url, "http://localhost");
+
   const rawQueries = (searchParams.get("queries") || "").trim();
   const reporters = (searchParams.get("reporters") || "").trim();
   const days = parseInt(searchParams.get("days") || "7", 10);
