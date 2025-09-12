@@ -2,7 +2,8 @@
   "version": 2,
   "functions": {
   "api/bsky/stream.js": {
-    "runtime": "nodejs18.x",
+    "runtime": "vercel-node@18.0.0"
+,
     "maxDuration": 60
   }
 }
