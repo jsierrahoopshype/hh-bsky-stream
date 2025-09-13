@@ -2,22 +2,23 @@ export const config = { runtime: "edge" };
 
 export default async function handler(req) {
   try {
-    const { searchParams } = new URL(req.url);
-    const queries = searchParams.get("queries")?.split("|") || [];
-    const days = parseInt(searchParams.get("days") || "7", 10);
+    // Build a full URL, using a fallback host if missing
+    const url = new URL(req.url, "http://localhost");
+    const queries = url.searchParams.get("queries")?.split("|") || [];
+    const days = parseInt(url.searchParams.get("days") || "7", 10);
 
     console.log("Incoming request", { queries, days });
 
     const results = await Promise.all(
       queries.map(async (q) => {
         try {
-          const url = `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(
+          const apiUrl = `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(
             q
           )}&since=${days}d`;
 
-          console.log("Fetching:", url);
+          console.log("Fetching:", apiUrl);
 
-          const res = await fetch(url);
+          const res = await fetch(apiUrl);
           if (!res.ok) {
             console.error("Failed fetch:", q, res.status);
             return { query: q, error: `Failed with ${res.status}` };
