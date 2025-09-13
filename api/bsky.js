@@ -13,9 +13,10 @@ export default async function handler(req, res) {
 
     const results = await Promise.all(
       queries.map(async (q) => {
+        // Removed &since=${days}d (not supported by Bluesky API)
         const apiUrl = `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(
           q
-        )}&since=${days}d`;
+        )}`;
 
         try {
           const resApi = await fetch(apiUrl, {
