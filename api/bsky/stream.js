@@ -2,20 +2,24 @@ export const config = { runtime: "edge" };
 
 export default async function handler(req) {
   try {
-    // Use Vercel Edge’s native nextUrl
-    const { searchParams } = req.nextUrl;
-
-    const queries = searchParams.get("queries")?.split("|") || [];
-    const days = parseInt(searchParams.get("days") || "7", 10);
+    // Force req.url to be absolute with a base
+    const url = new URL(req.url, "http://localhost");
+    const queries = url.searchParams.get("queries")?.split("|") || [];
+    const days = parseInt(url.searchParams.get("days") || "7", 10);
 
     const results = await Promise.all(
       queries.map(async (q) => {
-        try {
-          const apiUrl = `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(
-            q
-          )}&since=${days}d`;
+        const apiUrl = `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(
+          q
+        )}&since=${days}d`;
 
-          const res = await fetch(apiUrl);
+        try {
+          const res = await fetch(apiUrl, {
+            headers: {
+              Authorization: `Bearer ${process.env.BLUESKY_TOKEN}`,
+            },
+          });
+
           if (!res.ok) {
             return { query: q, error: `Failed with ${res.status}` };
           }
