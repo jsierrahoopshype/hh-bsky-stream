@@ -1,9 +1,3 @@
 {
-  "version": 2,
-  "routes": [
-    {
-      "src": "/api/bsky/stream",
-      "dest": "/api/bsky/stream.js"
-    }
-  ]
+  "version": 2
 }
